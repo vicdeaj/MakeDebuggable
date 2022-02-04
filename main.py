@@ -1,61 +1,64 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from libaml.aml import AML
-from libaml.aml import ResTypes
-from libaml.aml import ResXMLTree_attribute
+from libaml.aml import *
+import zipfile2 as zipfile
+import shutil
+from apk_signer.apksigner import remove_meta_inf, zipalign, apksign
 
-
-INDENT_BLOCK = '  '
 
 if __name__ == '__main__':
-    infile = "AndroidManifest.xml"
-    outfile = "out.xml"
+    # copy input to output
+    infile = "base.apk"
+    outfile = "out.apk"
 
-    # bulk infile to buf
-    with open(infile, "rb") as fp:
-        buf = fp.read()
+    shutil.copy(infile, outfile)
+    x = zipfile.ZipFile(outfile, "a")
+    manifest = x.open("AndroidManifest.xml","r")
 
     # create AML object for manipulation
-    aml = AML(buf)
-
-
+    aml = AML(manifest.read())
+    manifest.close()
 
     while aml.hasnext():
         header, body = aml.next()
+
         if header.type == ResTypes.RES_XML_START_ELEMENT_TYPE and body.nodename == "application":
             # remove attributes if present
             for t in body.attributes:
                 if str(t) == "android:allowBackup":
-                #    body.attributes.remove(t)
-                    pass
+                    body.attributes.remove(t)
                 if str(t) == "android:debuggable":
                     body.attributes.remove(t)
 
+            androidns = ResourceRef.create(stringpool=aml.stringpool, value=AML.ANDROID_NAMESPACE)
+            allowBackupValue = ResourceRef.create(stringpool=aml.stringpool, value="allowBackup")
+            debuggableValue = ResourceRef.create(stringpool=aml.stringpool, value="debuggable")
+
             # add atributes with desired parameters
-            newAttribute = ResXMLTree_attribute.make(AML.ANDROID_NAMESPACE,aml.stringpool,"allowBackup",True)
+            newAttribute = ResXMLTree_attribute.make(androidns, aml.stringpool, allowBackupValue, True)
             body.attributes.append(newAttribute)
 
-    INDENT_BLOCK = '  '
-    indent = 0
-    namespaces = []
-    # only checking
-    buf2 = aml.tobytes()
-    aml2 = AML(buf2)
-    while aml2.hasnext():
-        header, body = aml2.next()
-        if header.type == ResTypes.RES_XML_START_ELEMENT_TYPE:
-            print(INDENT_BLOCK * indent + '<%s%s>' % (
-            body.nodename, ''.join(namespaces + [' %s="%s"' % (i, i.typedValue.value) for i in body.attributes])))
-            namespaces = []
-            indent += 1
-        elif header.type == ResTypes.RES_XML_END_ELEMENT_TYPE:
-            indent -= 1
-            print(INDENT_BLOCK * indent + '</%s>' % body.nodename)
-        elif header.type == ResTypes.RES_XML_START_NAMESPACE_TYPE:
-            namespaces.append(' xmlns:%s="%s"' % (body.name, body.namespace))
-        elif header.type == ResTypes.RES_XML_TYPE:
-            print('<?xml version="1.0" encoding="utf-8"?>')
+            newAttribute2 = ResXMLTree_attribute.make(androidns, aml.stringpool, debuggableValue, True)
+            body.attributes.append(newAttribute2)
+
+    print(aml.tobytes())
+    exit(0)
+    x.remove("AndroidManifest.xml")
+    manifest = x.open("AndroidManifest.xml", "w")
+    manifest.write(aml.tobytes())
+    manifest.close()
+    x.close()
+
+    remove_meta_inf(outfile)
+    zipalign(outfile)
+    apksign(outfile)
+
+
+
+
+
+
 
 
 
